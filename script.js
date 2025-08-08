@@ -5,67 +5,141 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '© OpenStreetMap contributors'
 }).addTo(map);
 
-// Layer groups for interactivity
+/* =========================
+   Layer groups
+========================= */
 const bathroomLayer = L.layerGroup().addTo(map); // on by default
 const artLayer = L.layerGroup().addTo(map);      // on by default
 const dogLayer = L.layerGroup().addTo(map);      // on by default
 
-// Fetch Public Wi-Fi Hotspots data (limit 200 for now)
-fetch('https://data.cityofnewyork.us/resource/i7jb-7jku.json?$limit=200') // get rid of ?$limit=200 to see all
+/* =========================
+   Bathrooms with slider
+========================= */
+let allBathrooms = []; // store all bathroom records
+
+// fetch bathrooms and store them
+fetch('https://data.cityofnewyork.us/resource/i7jb-7jku.json')
   .then(res => res.json())
   .then(data => {
-    data.forEach(point => {
-      if (point.latitude && point.longitude) {
-        const popupContent = `
-          <b>${point.facility_name || 'No Facility Name'}</b><br>
-          ${point.borough || ''}
-        `;
-
-        L.marker([point.latitude, point.longitude])
-          //.addTo(map)
-          .addTo(bathroomLayer) 
-          .bindPopup(popupContent);
-      }
-    });
+    allBathrooms = data.filter(p => p.latitude && p.longitude);
+    // initial render
+    showBathrooms(50);
+    // after data arrives, make sure slider max reflects total count
+    updateBathroomSliderMax();
   })
-  .catch(err => console.error('Error loading data:', err));
-// Define a custom red icon for Public Art
+  .catch(err => console.error('Bathrooms error:', err));
+
+// render N bathrooms into the layer
+function showBathrooms(limit) {
+  bathroomLayer.clearLayers();
+  const n = Math.min(limit, allBathrooms.length);
+  allBathrooms.slice(0, n).forEach(point => {
+    L.marker([Number(point.latitude), Number(point.longitude)])
+      .addTo(bathroomLayer)
+      .bindPopup(`<b>${point.facility_name || 'No Facility Name'}</b>`);
+  });
+}
+
+/* A Leaflet control with a slider that controls how many bathrooms are visible */
+const bathroomCountControl = L.control({ position: 'topright' });
+
+bathroomCountControl.onAdd = function () {
+  const div = L.DomUtil.create('div', 'bathroom-control');
+  div.innerHTML = `
+    <label style="display:block;font-weight:600;margin-bottom:6px;">
+      Bathrooms to show: <span id="bathroomCountValue">50</span>
+    </label>
+    <input type="range" id="bathroomCount" min="10" max="300" step="10" value="50" style="width:180px;">
+  `;
+  L.DomEvent.disableClickPropagation(div); // using the control should not drag the map
+  return div;
+};
+
+bathroomCountControl.addTo(map);
+
+// wire the slider
+function initBathroomSlider() {
+  const slider = document.getElementById('bathroomCount');
+  const label = document.getElementById('bathroomCountValue');
+  if (!slider || !label) return;
+
+  slider.addEventListener('input', e => {
+    const value = Number(e.target.value);
+    label.textContent = value;
+    showBathrooms(value);
+  });
+}
+initBathroomSlider();
+
+function updateBathroomSliderMax() {
+  const slider = document.getElementById('bathroomCount');
+  const label = document.getElementById('bathroomCountValue');
+  if (!slider || !label) return;
+  if (allBathrooms.length) {
+    const max = Math.max(10, Math.min(1000, allBathrooms.length));
+    slider.max = String(max);
+    if (Number(slider.value) > max) {
+      slider.value = String(max);
+      label.textContent = slider.value;
+      showBathrooms(max);
+    }
+  }
+}
+
+/* =========================
+   Public Art (red pins) with description
+========================= */
 const redIcon = new L.Icon({
   iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
   shadowUrl: 'https://unpkg.com/leaflet/dist/images/marker-shadow.png',
-  iconSize: [25, 41], // size of the icon
-  iconAnchor: [12, 41], // point of the icon which will correspond to marker's location
-  popupAnchor: [1, -34], // point from which the popup should open
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
   shadowSize: [41, 41]
 });
 
-// Public Art — pins with custom icon
+// helper to extract lat/lon from various schema possibilities
+function extractLatLon(rec) {
+  if (rec.latitude && rec.longitude) {
+    return [Number(rec.latitude), Number(rec.longitude)];
+  }
+  if (rec.location && rec.location.latitude && rec.location.longitude) {
+    return [Number(rec.location.latitude), Number(rec.location.longitude)];
+  }
+  if (rec.the_geom && rec.the_geom.type === 'Point' && Array.isArray(rec.the_geom.coordinates)) {
+    const [lon, lat] = rec.the_geom.coordinates;
+    return [Number(lat), Number(lon)];
+  }
+  return null;
+}
+
 fetch('https://data.cityofnewyork.us/resource/3r2x-bnmj.json?$limit=250')
   .then(r => r.json())
   .then(rows => {
     rows.forEach(rec => {
-      let lat = rec.latitude;
-      let lon = rec.longitude;
+      const coords = extractLatLon(rec);
+      if (!coords) return;
 
-      if ((!lat || !lon) && rec.location && rec.location.latitude && rec.location.longitude) {
-        lat = rec.location.latitude;
-        lon = rec.location.longitude;
-      }
-      if ((!lat || !lon) && rec.the_geom && rec.the_geom.type === 'Point' && rec.the_geom.coordinates) {
-        const [gLon, gLat] = rec.the_geom.coordinates;
-        lat = gLat;
-        lon = gLon;
-      }
+      const title = rec.title || rec.name || 'Public Art';
+      const desc = rec.descriptio || rec.description || ''; // some datasets use "descriptio"
+      const artist = rec.artist || rec.creator || rec.author || '';
 
-      if (lat && lon) {
-        L.marker([Number(lat), Number(lon)], { icon: redIcon }).addTo(artLayer);//.addTo(map);
-         
-      }
+      const popupHTML = `
+        <b>${title}</b><br>
+        ${artist ? `Artist: ${artist}<br>` : ''}
+        ${desc ? `<div style="max-width:220px;margin-top:4px;">${desc}</div>` : ''}
+      `;
+
+      L.marker(coords, { icon: redIcon })
+        .addTo(artLayer)
+        .bindPopup(popupHTML);
     });
   })
-  .catch(err => console.error('Public Art fetch error:', err));
-//dog piss ayyyy
-// Yellow icon for dog runs
+  .catch(err => console.error('Public Art error:', err));
+
+/* =========================
+   Dog Runs (yellow pins) from MultiPolygon
+========================= */
 const yellowIcon = new L.Icon({
   iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-yellow.png',
   shadowUrl: 'https://unpkg.com/leaflet/dist/images/marker-shadow.png',
@@ -75,26 +149,60 @@ const yellowIcon = new L.Icon({
   shadowSize: [41, 41]
 });
 
-fetch('https://data.cityofnewyork.us/resource/hxx3-bwgv.json?') //$limit=200
+// simple centroid for MultiPolygon: average of all vertices
+function centroidOfMultiPolygon(geom) {
+  try {
+    if (!geom || geom.type !== 'MultiPolygon' || !Array.isArray(geom.coordinates)) return null;
+    let latSum = 0, lonSum = 0, count = 0;
+    // geom.coordinates = [ polygon[], polygon[], ... ]
+    geom.coordinates.forEach(poly => {
+      // poly = [ ring[], ring[], ... ] first ring is outer boundary
+      poly.forEach(ring => {
+        ring.forEach(([lon, lat]) => {
+          latSum += Number(lat);
+          lonSum += Number(lon);
+          count += 1;
+        });
+      });
+    });
+    if (count === 0) return null;
+    return [latSum / count, lonSum / count];
+  } catch {
+    return null;
+  }
+}
+
+fetch('https://data.cityofnewyork.us/resource/hxx3-bwgv.json?$limit=500')
   .then(r => r.json())
   .then(rows => {
     rows.forEach(rec => {
+      // prefer centroid of the polygon geometry
+      let coords = null;
       if (rec.the_geom && rec.the_geom.type === 'MultiPolygon') {
-        // Grab the very first coordinate in the shape
-        const coords = rec.the_geom.coordinates[0][0][0]; // [lon, lat]
-        const lon = coords[0];
-        const lat = coords[1];
-
-        L.marker([lat, lon], { icon: yellowIcon })
-          //.addTo(map)
-          .addTo(dogLayer)
-          .bindPopup(`<b>${rec.name || 'Dog Run'}</b><br>${rec.borough || ''}`);
+        const c = centroidOfMultiPolygon(rec.the_geom);
+        if (c) coords = c;
       }
+      // fallback to first coordinate if centroid failed
+      if (!coords && rec.the_geom && rec.the_geom.type === 'MultiPolygon') {
+        const first = rec.the_geom.coordinates?.[0]?.[0]?.[0]; // [lon, lat]
+        if (first) coords = [Number(first[1]), Number(first[0])];
+      }
+      if (!coords) return;
+
+      const name = rec.name || 'Dog Run';
+      const zipcode = rec.zipcode || '';
+
+      L.marker(coords, { icon: yellowIcon })
+        .addTo(dogLayer)
+        .bindPopup(`<b>${name}</b>${zipcode ? `<br>${zipcode}` : ''}`);
     });
   })
-  .catch(err => console.error('Dog Runs fetch error:', err));
+  .catch(err => console.error('Dog Runs error:', err));
 
-  const legend = L.control({ position: 'bottomright' });
+/* =========================
+   Legend with checkboxes
+========================= */
+const legend = L.control({ position: 'bottomright' });
 
 legend.onAdd = function () {
   const div = L.DomUtil.create('div', 'legend');
@@ -116,31 +224,36 @@ legend.onAdd = function () {
       <span>Dog Runs</span>
     </label>
   `;
-
-  // Let users click in the legend without the map dragging
   L.DomEvent.disableClickPropagation(div);
   return div;
 };
 
 legend.addTo(map);
 
-// Wire up checkbox events
+// connect legend checkboxes to layers and the bathroom slider control
 function bindLegendToggles() {
   const b = document.getElementById('toggle-bathrooms');
   const a = document.getElementById('toggle-art');
   const d = document.getElementById('toggle-dogs');
 
-  b.addEventListener('change', (e) => {
-    if (e.target.checked) bathroomLayer.addTo(map);
-    else map.removeLayer(bathroomLayer);
+  b.addEventListener('change', e => {
+    if (e.target.checked) {
+      bathroomLayer.addTo(map);
+      // show the bathroom slider control again
+      document.querySelector('.bathroom-control')?.classList.remove('hidden');
+    } else {
+      map.removeLayer(bathroomLayer);
+      // hide the bathroom slider control
+      document.querySelector('.bathroom-control')?.classList.add('hidden');
+    }
   });
 
-  a.addEventListener('change', (e) => {
+  a.addEventListener('change', e => {
     if (e.target.checked) artLayer.addTo(map);
     else map.removeLayer(artLayer);
   });
 
-  d.addEventListener('change', (e) => {
+  d.addEventListener('change', e => {
     if (e.target.checked) dogLayer.addTo(map);
     else map.removeLayer(dogLayer);
   });
