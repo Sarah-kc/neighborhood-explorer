@@ -146,4 +146,3 @@ function bindLegendToggles() {
   });
 }
 bindLegendToggles();
-console.log("yas queen");
