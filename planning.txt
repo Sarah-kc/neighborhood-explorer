@@ -1,0 +1,6 @@
+Concept: Creating a feature for looking at relevant NYC resources all at once (essentially a personalized map)
+  > Subway stations
+  > Wifi hubs
+  > Libraries
+  > Parks
+  > Art
