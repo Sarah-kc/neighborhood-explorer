@@ -75,7 +75,7 @@ const yellowIcon = new L.Icon({
   shadowSize: [41, 41]
 });
 
-fetch('https://data.cityofnewyork.us/resource/hxx3-bwgv.json?$limit=200')
+fetch('https://data.cityofnewyork.us/resource/hxx3-bwgv.json?') //$limit=200
   .then(r => r.json())
   .then(rows => {
     rows.forEach(rec => {
