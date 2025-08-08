@@ -1,6 +1,6 @@
 Concept: Creating a feature for looking at relevant NYC resources all at once (essentially a personalized map)
-  > Subway stations
-  > Wifi hubs
-  > Libraries
-  > Parks
-  > Art
+  > Subway stations: https://data.ny.gov/Transportation/MTA-Subway-Stations/39hk-dx4f/data_preview
+  > Wifi hubs: https://data.cityofnewyork.us/City-Government/LinkNYC-Kiosk-Status/n6c5-95xh/about_data
+  > Dog runs: https://data.cityofnewyork.us/Recreation/Dog-Runs/hxx3-bwgv/about_data
+  > Bathrooms: https://data.cityofnewyork.us/City-Government/Public-Restrooms/i7jb-7jku/about_data
+  > Art: https://data.cityofnewyork.us/Transportation/Temporary-Art-Program/3r2x-bnmj/about_data
